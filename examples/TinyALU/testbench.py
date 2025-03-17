@@ -38,6 +38,35 @@ class AluSeqItem(uvm_sequence_item):
         OP: {self.op.name} ({self.op.value}) B: 0x{self.B:02x}"
 
 
+class PrimeSeqItem (AluSeqItem):
+    def __init__(self, name, aa, bb, op):
+        super().__init__(name, aa, bb, op)
+        self.primeNumbers = self.generate_primes(0, 256)
+
+    def randomize_operands(self):
+        self.A = random.choice(self.primeNumbers)
+        self.B = random.choice(self.primeNumbers)
+
+    def is_prime(self, n):
+        if n < 2:
+            return False
+        for i in range(2, int(n ** 0.5) + 1):
+            if n % i == 0:
+                return False
+
+        return True
+
+    def generate_primes(self, start, end):
+        return [num for num in range(start, end) if (self.is_prime(num))]
+    
+class PrimeSeq(uvm_sequence):
+    async def body(self):
+        for op in list(Ops):
+            cmd_tr = PrimeSeqItem("cmd_tr", None, None, op)
+            await self.start_item(cmd_tr)
+            cmd_tr.randomize_operands()
+            await self.finish_item(cmd_tr)
+
 class RandomSeq(uvm_sequence):
     async def body(self):
         for op in list(Ops):
@@ -61,8 +90,10 @@ class TestAllSeq(uvm_sequence):
         seqr = ConfigDB().get(None, "", "SEQR")
         random = RandomSeq("random")
         max = MaxSeq("max")
+        prime = PrimeSeq("prime")
         await random.start(seqr)
         await max.start(seqr)
+        await prime.start(seqr)
 
 
 class TestAllForkSeq(uvm_sequence):
@@ -71,9 +102,12 @@ class TestAllForkSeq(uvm_sequence):
         seqr = ConfigDB().get(None, "", "SEQR")
         random = RandomSeq("random")
         max = MaxSeq("max")
+        prime = PrimeSeq("prime") 
+
         random_task = cocotb.start_soon(random.start(seqr))
         max_task = cocotb.start_soon(max.start(seqr))
-        await Combine(random_task, max_task)
+        prime_task = cocotb.start_soon(prime.start(seqr))
+        await Combine(random_task, max_task, prime_task)
 
 # Sequence library example
 
@@ -297,3 +331,9 @@ class AluTestErrors(AluTest):
 
     def start_of_simulation_phase(self):
         ConfigDB().set(None, "*", "CREATE_ERRORS", True)
+
+@pyuvm.test()
+class PrimeTest(AluTest):
+    def build_phase(self):
+        uvm_factory().set_type_override_by_type(TestAllSeq, PrimeSeq)
+        super().build_phase()
